@@ -1,10 +1,18 @@
 import express from "express";
 import dotenv from "dotenv";
 import { rateLimiter } from "./middleware.js";
+import { getMetricsSnapshot } from "./metrics.js";
 
 dotenv.config();
 
 const app = express();
+
+// The dashboard runs on a different port (Vite dev server, e.g. :5173)
+// during development, so the browser needs CORS permission to poll this API.
+app.use((req, res, next) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  next();
+});
 
 // Route protected by Fixed Window: 10 requests per 30 seconds per IP
 app.get(
@@ -43,6 +51,11 @@ app.get(
     res.json({ message: "success", algorithm: "leaky-bucket" });
   }
 );
+
+// Dashboard polls this endpoint to render live charts.
+app.get("/api/metrics", (req, res) => {
+  res.json(getMetricsSnapshot());
+});
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 

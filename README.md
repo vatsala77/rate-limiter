@@ -114,6 +114,27 @@ npm start
 k6 run k6-tests/loadtest.js -e ALGO=fixed          # or sliding / token-bucket / leaky-bucket
 ```
 
+## Live Dashboard
+
+A React + Recharts dashboard shows allowed vs rejected requests per algorithm
+in real time, polling the backend's `/api/metrics` endpoint every second.
+
+```bash
+# terminal 1: backend (from project root)
+npm start
+
+# terminal 2: dashboard
+cd dashboard
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (usually `http://localhost:5173`). Generate some
+traffic to see it update live:
+```bash
+k6 run k6-tests/loadtest.js -e ALGO=fixed
+```
+
 ## Roadmap
 
 - [x] Fixed Window Counter
@@ -122,5 +143,5 @@ k6 run k6-tests/loadtest.js -e ALGO=fixed          # or sliding / token-bucket /
 - [x] Leaky Bucket
 - [ ] Sliding Window Log
 - [x] k6 load test suite with p50/p95/p99 benchmarks
-- [ ] React + Recharts live dashboard (allowed vs blocked requests)
+- [x] React + Recharts live dashboard (allowed vs blocked requests)
 - [ ] Deploy to Vercel

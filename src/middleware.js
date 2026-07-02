@@ -2,6 +2,7 @@ import { fixedWindowCheck } from "./algorithms/fixedWindow.js";
 import { slidingWindowCheck } from "./algorithms/slidingWindowCounter.js";
 import { tokenBucketCheck } from "./algorithms/tokenBucket.js";
 import { leakyBucketCheck } from "./algorithms/leakyBucket.js";
+import { recordRequest } from "./metrics.js";
 
 // Strategy pattern: add new algorithms here without touching the middleware logic.
 const ALGORITHMS = {
@@ -41,6 +42,8 @@ export function rateLimiter({
 
     try {
       const result = await check(identifier, params);
+
+      recordRequest(result.algorithm, result.allowed);
 
       // Standard rate-limit headers, same convention as GitHub/Stripe APIs
       res.set("X-RateLimit-Limit", String(result.limit));
