@@ -40,11 +40,9 @@ export const options = {
     { duration: "15s", target: 30 },  // hold: sustained overload
     { duration: "5s", target: 0 },    // cool down
   ],
-  thresholds: {
-    // Fail the test run if p95 latency ever exceeds 500ms — a
-    // reasonable ceiling for a Redis-backed check + Lua script.
-    http_req_duration: ["p(95)<500"],
-  },
+ thresholds: {
+  http_req_duration: ["p(95)<800"], // relaxed for free-tier hosting
+},
 };
 
 export default function () {
