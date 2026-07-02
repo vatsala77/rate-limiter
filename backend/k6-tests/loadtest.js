@@ -14,7 +14,7 @@ import { Counter } from "k6/metrics";
  */
 
 const ALGO = __ENV.ALGO || "fixed";
-const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
+const BASE_URL = __ENV.BASE_URL || "https://rate-limiter-l8yi.onrender.com";
 
 const ENDPOINTS = {
   fixed: "/api/fixed",
