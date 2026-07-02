@@ -1,5 +1,14 @@
 # Distributed Rate Limiter
 
+## 🔗 Live Demo
+
+**Dashboard:** https://rate-limiter-eta.vercel.app/
+**API:** https://rate-limiter-l8yi.onrender.com/api/fixed
+
+> Note: the backend runs on Render's free tier, which sleeps after 15 minutes
+> of inactivity. The first request after idle can take 30–50 seconds to wake
+> up — this is a Render free-tier limitation, not a bug in the rate limiter.
+
 A Redis-backed, multi-algorithm rate limiter built as reusable Express middleware.
 Designed to demonstrate distributed systems concepts: atomicity, race conditions,
 and failure-mode tradeoffs — not just a working demo.
@@ -10,7 +19,85 @@ Most rate limiter tutorials use a single in-memory counter, which breaks the mom
 you run more than one server instance. This one uses Redis as shared state so the
 limit is enforced correctly across N instances of your API.
 
-## Setup
+## How to Test This
+
+You don't need to download or install anything — this works against the live
+website and live API directly from your terminal.
+
+**Step 1: Open the dashboard**
+Go to https://rate-limiter-eta.vercel.app/ and keep this tab open. This is
+where you'll see live numbers update.
+
+**Step 2: Open a terminal**
+- On Mac/Linux: open the Terminal app.
+- On Windows: open PowerShell (search "PowerShell" in the Start menu).
+
+**Step 3: Send one request and see it work**
+
+Mac/Linux (bash):
+```bash
+curl -i https://rate-limiter-l8yi.onrender.com/api/fixed
+```
+
+Windows (PowerShell):
+```powershell
+curl.exe -i https://rate-limiter-l8yi.onrender.com/api/fixed
+```
+
+> First request may take 30–50 seconds — the free server "sleeps" when
+> nobody uses it for a while and needs a moment to wake up. This is normal.
+
+You should see a response like:
+```
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 9
+{"message":"success","algorithm":"fixed-window"}
+```
+`X-RateLimit-Remaining` tells you how many requests you have left before
+you get blocked.
+
+**Step 4: Trigger the actual rate limit**
+
+The limit is 10 requests every 30 seconds. Send more than 10 requests quickly
+and watch it start blocking you:
+
+Mac/Linux (bash):
+```bash
+for i in {1..12}; do curl -i https://rate-limiter-l8yi.onrender.com/api/fixed; echo; done
+```
+
+Windows (PowerShell):
+```powershell
+1..12 | ForEach-Object { curl.exe -i https://rate-limiter-l8yi.onrender.com/api/fixed }
+```
+
+What to expect: the first 10 requests return `200 OK` (success). Requests
+11 and 12 return `429 Too Many Requests` — this is the rate limiter doing
+its job, blocking you once you go over the limit.
+
+**Step 5: Try the other 3 algorithms**
+Same idea, just swap the URL path:
+```
+https://rate-limiter-l8yi.onrender.com/api/sliding
+https://rate-limiter-l8yi.onrender.com/api/token-bucket
+https://rate-limiter-l8yi.onrender.com/api/leaky-bucket
+```
+
+**Step 6: See the raw numbers behind the dashboard**
+```bash
+curl https://rate-limiter-l8yi.onrender.com/api/metrics
+```
+This returns the same data the dashboard charts are built from — total
+requests allowed/rejected per algorithm, and a per-second history.
+
+**Step 7 (optional): Read the code**
+If you want to see how it's built rather than just test it, start here:
+- `src/middleware.js` — the entry point, decides which algorithm to run
+- `src/algorithms/` — each algorithm's logic (Fixed Window, Sliding Window, Token Bucket, Leaky Bucket)
+- `src/redisClient.js` — how it talks to Redis safely (atomic operations, reconnect handling)
+
+## How to Run This Locally
 
 ```bash
 npm install
@@ -116,9 +203,12 @@ k6 run k6-tests/loadtest.js -e ALGO=fixed          # or sliding / token-bucket /
 
 ## Live Dashboard
 
+**Try it live:** https://rate-limiter-eta.vercel.app/ (no setup needed)
+
 A React + Recharts dashboard shows allowed vs rejected requests per algorithm
 in real time, polling the backend's `/api/metrics` endpoint every second.
 
+To run it locally instead:
 ```bash
 # terminal 1: backend (from project root)
 npm start
@@ -144,4 +234,4 @@ k6 run k6-tests/loadtest.js -e ALGO=fixed
 - [ ] Sliding Window Log
 - [x] k6 load test suite with p50/p95/p99 benchmarks
 - [x] React + Recharts live dashboard (allowed vs blocked requests)
-- [ ] Deploy to Vercel
+- [x] Deploy to Vercel + Render
