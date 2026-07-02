@@ -34,7 +34,7 @@ import {
 import "./App.css";
 
 // Environment variable check karega, agar nahi mila toh default localhost par chalega
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 const ALGORITHMS = [
   { 
