@@ -3,9 +3,7 @@ import dotenv from "dotenv";
 import { rateLimiter } from "./middleware.js";
 import { getMetricsSnapshot } from "./metrics.js";
 import cors from "cors";
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-}));
+
 dotenv.config();
 
 const app = express();
@@ -17,6 +15,9 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+}));
 // Route protected by Fixed Window: 10 requests per 30 seconds per IP
 app.get(
   "/api/fixed",
