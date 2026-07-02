@@ -15,8 +15,21 @@ app.use((req, res, next) => {
   next();
 });
 
+
+
+const allowedOrigins = [
+  "https://rate-limiter-eta.vercel.app",
+  "http://localhost:5173",
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // curl/postman jaise no-origin requests
+    if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+      return callback(null, true);
+    }
+    callback(new Error("Not allowed by CORS"));
+  },
 }));
 // Route protected by Fixed Window: 10 requests per 30 seconds per IP
 app.get(
