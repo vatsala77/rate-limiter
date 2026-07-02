@@ -1,4 +1,4 @@
-import redis from "../redisClient.js";
+import redis, { evalWithReload } from "../redisClient.js";
 
 /**
  * SLIDING WINDOW COUNTER
@@ -51,14 +51,7 @@ const SLIDING_WINDOW_SCRIPT = `
   end
 `;
 
-let scriptSha = null;
-
-async function loadScript() {
-  if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", SLIDING_WINDOW_SCRIPT);
-  }
-  return scriptSha;
-}
+let scriptCache = { sha: null };
 
 export async function slidingWindowCheck(identifier, { limit, windowSeconds }) {
   const now = Date.now();
@@ -70,10 +63,9 @@ export async function slidingWindowCheck(identifier, { limit, windowSeconds }) {
   const currKey = `rl:sliding:${identifier}:${currentWindowId}`;
   const prevKey = `rl:sliding:${identifier}:${previousWindowId}`;
 
-  const sha = await loadScript();
-
-  const [allowed, current, estimated] = await redis.evalsha(
-    sha,
+  const [allowed, current, estimated] = await evalWithReload(
+    SLIDING_WINDOW_SCRIPT,
+    scriptCache,
     2,
     currKey,
     prevKey,

@@ -1,4 +1,4 @@
-import redis from "../redisClient.js";
+import redis, { evalWithReload } from "../redisClient.js";
 
 /**
  * LEAKY BUCKET
@@ -66,14 +66,7 @@ const LEAKY_BUCKET_SCRIPT = `
   return {allowed, level}
 `;
 
-let scriptSha = null;
-
-async function loadScript() {
-  if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", LEAKY_BUCKET_SCRIPT);
-  }
-  return scriptSha;
-}
+let scriptCache = { sha: null };
 
 /**
  * @param {string} identifier
@@ -82,10 +75,10 @@ async function loadScript() {
 export async function leakyBucketCheck(identifier, { capacity, leakRate }) {
   const key = `rl:leaky:${identifier}`;
   const now = Date.now() / 1000;
-  const sha = await loadScript();
 
-  const [allowed, level] = await redis.evalsha(
-    sha,
+  const [allowed, level] = await evalWithReload(
+    LEAKY_BUCKET_SCRIPT,
+    scriptCache,
     1,
     key,
     capacity,

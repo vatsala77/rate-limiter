@@ -10,7 +10,22 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "ioredis": "^5.4.1"
+    "express": "^4.22.2",
+    "ioredis": "^5.4.1",
+    "redis": "^6.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vatsala77/rate-limiter.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vatsala77/rate-limiter/issues"
+  },
+  "homepage": "https://github.com/vatsala77/rate-limiter#readme",
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

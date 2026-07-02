@@ -1,4 +1,4 @@
-import redis from "../redisClient.js";
+import redis, { evalWithReload } from "../redisClient.js";
 
 /**
  * FIXED WINDOW COUNTER
@@ -46,14 +46,7 @@ const FIXED_WINDOW_SCRIPT = `
   end
 `;
 
-let scriptSha = null;
-
-async function loadScript() {
-  if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", FIXED_WINDOW_SCRIPT);
-  }
-  return scriptSha;
-}
+let scriptCache = { sha: null };
 
 /**
  * @param {string} identifier - e.g. userId, IP, or apiKey
@@ -61,10 +54,10 @@ async function loadScript() {
  */
 export async function fixedWindowCheck(identifier, { limit, windowSeconds }) {
   const key = `rl:fixed:${identifier}:${Math.floor(Date.now() / (windowSeconds * 1000))}`;
-  const sha = await loadScript();
 
-  const [allowed, current, ttl] = await redis.evalsha(
-    sha,
+  const [allowed, current, ttl] = await evalWithReload(
+    FIXED_WINDOW_SCRIPT,
+    scriptCache,
     1, // number of KEYS
     key,
     limit,

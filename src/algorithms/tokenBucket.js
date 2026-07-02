@@ -1,4 +1,4 @@
-import redis from "../redisClient.js";
+import redis, { evalWithReload } from "../redisClient.js";
 
 /**
  * TOKEN BUCKET
@@ -67,14 +67,7 @@ const TOKEN_BUCKET_SCRIPT = `
   return {allowed, refilled}
 `;
 
-let scriptSha = null;
-
-async function loadScript() {
-  if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", TOKEN_BUCKET_SCRIPT);
-  }
-  return scriptSha;
-}
+let scriptCache = { sha: null };
 
 /**
  * @param {string} identifier
@@ -83,10 +76,10 @@ async function loadScript() {
 export async function tokenBucketCheck(identifier, { capacity, refillRate }) {
   const key = `rl:token:${identifier}`;
   const now = Date.now() / 1000; // seconds, as a float for sub-second precision
-  const sha = await loadScript();
 
-  const [allowed, remaining] = await redis.evalsha(
-    sha,
+  const [allowed, remaining] = await evalWithReload(
+    TOKEN_BUCKET_SCRIPT,
+    scriptCache,
     1,
     key,
     capacity,
