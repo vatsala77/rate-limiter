@@ -2,7 +2,10 @@ import express from "express";
 import dotenv from "dotenv";
 import { rateLimiter } from "./middleware.js";
 import { getMetricsSnapshot } from "./metrics.js";
-
+import cors from "cors";
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+}));
 dotenv.config();
 
 const app = express();
