@@ -3,6 +3,7 @@ import { slidingWindowCheck } from "./algorithms/slidingWindowCounter.js";
 import { tokenBucketCheck } from "./algorithms/tokenBucket.js";
 import { leakyBucketCheck } from "./algorithms/leakyBucket.js";
 import { recordRequest } from "./metrics.js";
+import { logToFirehose } from "./utils/firehoseLogger.js";
 
 // Strategy pattern: add new algorithms here without touching the middleware logic.
 const ALGORITHMS = {
@@ -39,6 +40,19 @@ export function rateLimiter({
 
   return async function middleware(req, res, next) {
     const identifier = keyGenerator(req);
+
+    // Log every request outcome to Firehose (allowed, rejected, or errored),
+    // regardless of which path this request takes below. Fire-and-forget —
+    // never blocks or affects the actual rate-limiting response.
+    res.on("finish", () => {
+      logToFirehose({
+        ip: identifier,
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        algorithm: algorithm,
+      });
+    });
 
     try {
       const result = await check(identifier, params);

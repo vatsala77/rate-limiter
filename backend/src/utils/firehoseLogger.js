@@ -1,4 +1,4 @@
-const { FirehoseClient, PutRecordCommand } = require("@aws-sdk/client-firehose");
+import { FirehoseClient, PutRecordCommand } from "@aws-sdk/client-firehose";
 
 const client = new FirehoseClient({
   region: process.env.AWS_REGION || "ap-south-1",
@@ -10,7 +10,12 @@ const client = new FirehoseClient({
 
 const STREAM_NAME = process.env.FIREHOSE_STREAM_NAME || "rate-limiter-log-stream";
 
-function logToFirehose(logData) {
+/**
+ * Fire-and-forget log push to Kinesis Firehose.
+ * NEVER throws, NEVER blocks the response — designed to fail silently
+ * so the core Rate Limiter service is never affected.
+ */
+export function logToFirehose(logData) {
   try {
     const record = {
       Data: Buffer.from(JSON.stringify({
@@ -31,5 +36,3 @@ function logToFirehose(logData) {
     console.warn("[firehoseLogger] Unexpected error (non-fatal):", err.message);
   }
 }
-
-module.exports = { logToFirehose };
