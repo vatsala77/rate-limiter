@@ -1,158 +1,139 @@
 # Distributed Rate Limiter
 
+A Redis-backed, multi-algorithm rate limiter built as reusable Express middleware. It is meant to demonstrate distributed-systems concepts (atomicity, race conditions, failure-mode trade-offs), not just a working demo.
+
 ## 🔗 Live Demo
 
 **Dashboard:** https://rate-limiter-eta.vercel.app/
 **API:** https://rate-limiter-l8yi.onrender.com/api/fixed
 
-> Note: the backend runs on Render's free tier, which sleeps after 15 minutes
-> of inactivity. The first request after idle can take 30–50 seconds to wake
-> up — this is a Render free-tier limitation, not a bug in the rate limiter.
-
-A Redis-backed, multi-algorithm rate limiter built as reusable Express middleware.
-Designed to demonstrate distributed systems concepts: atomicity, race conditions,
-and failure-mode tradeoffs — not just a working demo.
+> The backend runs on Render's free tier, which sleeps after 15 minutes of inactivity. The first request after idle can take 30–50 seconds. Live dashboard metrics are in-memory, so they reset whenever the server restarts or wakes up.
 
 ## Why this exists
 
-Most rate limiter tutorials use a single in-memory counter, which breaks the moment
-you run more than one server instance. This one uses Redis as shared state so the
-limit is enforced correctly across N instances of your API.
+Most rate limiter tutorials use a single in-memory counter, which breaks as soon as you run more than one server instance. This project keeps the rate-limit state in Redis, so the limit is enforced across N instances of your API.
 
-## How to Test This
+## Project structure
 
-You don't need to download or install anything — this works against the live
-website and live API directly from your terminal.
+```
+rate-limiter/
+├── backend/
+│   ├── src/
+│   │   ├── server.js            # Express app, routes, CORS
+│   │   ├── middleware.js        # rateLimiter() factory, strategy pattern, failure modes
+│   │   ├── redisClient.js       # shared ioredis connection + evalWithReload (NOSCRIPT recovery)
+│   │   ├── metrics.js           # in-memory counters for the dashboard
+│   │   ├── diagnose.js          # dev-only script: Redis connection / PING latency check
+│   │   ├── algorithms/          # fixedWindow, slidingWindowCounter, tokenBucket, leakyBucket
+│   │   └── utils/firehoseLogger.js  # fire-and-forget request logs to AWS Kinesis Firehose
+│   └── k6-tests/loadtest.js     # k6 load test
+└── dashboard/                   # React + Recharts live dashboard (Vite)
+```
 
-**Step 1: Open the dashboard**
-Go to https://rate-limiter-eta.vercel.app/ and keep this tab open. This is
-where you'll see live numbers update.
+## How to test this
 
-**Step 2: Open a terminal**
-- On Mac/Linux: open the Terminal app.
-- On Windows: open PowerShell (search "PowerShell" in the Start menu).
+You don't need to install anything. Everything below works against the live API.
 
-**Step 3: Send one request and see it work**
+**1. Open the dashboard:** https://rate-limiter-eta.vercel.app/ and keep it open.
 
-Mac/Linux (bash):
+**2. Send one request**
+
+Mac/Linux:
 ```bash
 curl -i https://rate-limiter-l8yi.onrender.com/api/fixed
 ```
-
 Windows (PowerShell):
 ```powershell
 curl.exe -i https://rate-limiter-l8yi.onrender.com/api/fixed
 ```
 
-> First request may take 30–50 seconds — the free server "sleeps" when
-> nobody uses it for a while and needs a moment to wake up. This is normal.
-
-You should see a response like:
+You should see something like:
 ```
 HTTP/1.1 200 OK
 X-RateLimit-Limit: 10
 X-RateLimit-Remaining: 9
+X-RateLimit-Algorithm: fixed-window
 {"message":"success","algorithm":"fixed-window"}
 ```
-`X-RateLimit-Remaining` tells you how many requests you have left before
-you get blocked.
 
-**Step 4: Trigger the actual rate limit**
+**3. Trigger the limit** (10 requests per 30 seconds per client)
 
-The limit is 10 requests every 30 seconds. Send more than 10 requests quickly
-and watch it start blocking you:
-
-Mac/Linux (bash):
+Mac/Linux:
 ```bash
 for i in {1..12}; do curl -i https://rate-limiter-l8yi.onrender.com/api/fixed; echo; done
 ```
-
 Windows (PowerShell):
 ```powershell
 1..12 | ForEach-Object { curl.exe -i https://rate-limiter-l8yi.onrender.com/api/fixed }
 ```
 
-What to expect: the first 10 requests return `200 OK` (success). Requests
-11 and 12 return `429 Too Many Requests` — this is the rate limiter doing
-its job, blocking you once you go over the limit.
+The first 10 return `200 OK`; the rest return `429 Too Many Requests`.
 
-**Step 5: Try the other 3 algorithms**
-Same idea, just swap the URL path:
+**4. Try the other algorithms** by swapping the path:
 ```
-https://rate-limiter-l8yi.onrender.com/api/sliding
-https://rate-limiter-l8yi.onrender.com/api/token-bucket
-https://rate-limiter-l8yi.onrender.com/api/leaky-bucket
+/api/sliding
+/api/token-bucket
+/api/leaky-bucket
 ```
 
-**Step 6: See the raw numbers behind the dashboard**
+**5. See the raw numbers behind the dashboard**
 ```bash
 curl https://rate-limiter-l8yi.onrender.com/api/metrics
 ```
-This returns the same data the dashboard charts are built from — total
-requests allowed/rejected per algorithm, and a per-second history.
 
-**Step 7 (optional): Read the code**
-If you want to see how it's built rather than just test it, start here:
-- `src/middleware.js` — the entry point, decides which algorithm to run
-- `src/algorithms/` — each algorithm's logic (Fixed Window, Sliding Window, Token Bucket, Leaky Bucket)
-- `src/redisClient.js` — how it talks to Redis safely (atomic operations, reconnect handling)
+**6. Read the code:** start with `backend/src/middleware.js`, then `backend/src/algorithms/`, then `backend/src/redisClient.js`.
 
-## How to Run This Locally
+## How to run locally
 
 ```bash
+cd backend
 npm install
 cp .env.example .env
 # fill in UPSTASH_REDIS_URL from https://console.upstash.com
 npm start
 ```
 
-Test it:
 ```bash
 curl http://localhost:3000/api/fixed
 curl http://localhost:3000/api/sliding
 ```
 
+AWS Firehose logging is optional. If `AWS_*` / `FIREHOSE_STREAM_NAME` are not set, log pushes fail with a non-fatal warning and requests are unaffected. Never commit `.env`.
+
 ## Algorithms implemented
 
-| Algorithm | Memory | Accuracy | Allows bursts? | Used by |
+| Algorithm | Memory | Accuracy | Bursts | Notes |
 |---|---|---|---|---|
-| Fixed Window | O(1) per key | Low (boundary burst issue) | Yes, at window edges (bug) | Simple APIs |
-| Sliding Window Counter | O(1) per key | High (weighted approximation) | No | Cloudflare, most production systems |
-| Token Bucket | O(1) per key | High | Yes, intentionally | Stripe, AWS API Gateway |
-| Leaky Bucket | O(1) per key | High | No, smooths to fixed rate | Network traffic shaping |
+| Fixed Window | O(1) per key | Low | Up to 2x the limit across a window boundary | Simplest and cheapest |
+| Sliding Window Counter | O(1) per key (2 counters) | High (weighted approximation) | No boundary burst | Rejected requests are also counted (see below) |
+| Token Bucket | O(1) per key | High | Yes, intentionally, up to `capacity` | Used by Stripe, AWS API Gateway |
+| Leaky Bucket (meter) | O(1) per key | High | An idle client can still send up to `capacity` at once | Counter-based, not a real queue |
+
+**About the Leaky Bucket here:** this is the "leaky bucket as a meter" variant. It tracks a virtual water level that drains over time. It does not queue or delay requests, so it does not shape output to a perfectly constant rate. In this form it behaves mathematically like a token bucket (`level = capacity − tokens`), which is why both show the same allowed counts in the benchmark. A true shaping version needs a job queue (e.g. BullMQ), which is out of scope.
 
 ## Design decisions worth asking me about in an interview
 
 **1. Why Lua scripts instead of plain Redis commands?**
-A naive implementation does `GET` then `INCR` as two separate round trips. Between
-those two calls, another request can slip in and read the same stale count —
-a classic race condition, and under real concurrent load it lets more requests
-through than the limit allows. Every algorithm here does its read-check-write
-as a single Lua script (`EVALSHA`), which Redis executes atomically on the
-server — no interleaving possible, and it's one network round trip instead of two.
+Token Bucket, Leaky Bucket and Sliding Window all do a read, compute, write sequence. With separate `HMGET` / `HMSET` calls, two concurrent requests can both read "1 token left", both decide "allowed", and the limit is exceeded. Wrapping the whole sequence in one Lua script (`EVALSHA`) makes Redis execute it atomically, in one network round trip. For Fixed Window, `INCR` is already atomic, so Lua is used there mainly to make `INCR` + `EXPIRE` + `TTL` a single unit and to keep every algorithm on the same pattern.
 
-**2. Fail-open vs fail-closed**
-If Redis itself goes down, what should happen to your API?
-- `fail-open`: let requests through. Prioritizes uptime. Default here — most
-  APIs would rather serve traffic unprotected for a few minutes than go fully down.
-- `fail-closed`: reject everything. Use this for abuse-sensitive endpoints like
-  login or payment, where letting unlimited requests through during an outage
-  is more dangerous than a temporary 503.
+**2. NOSCRIPT recovery**
+Scripts are cached by SHA. If Redis loses its script cache (server restart or failover on a managed service), `EVALSHA` fails with `NOSCRIPT`. Without handling, the middleware's fail-open path swallowed that error and requests silently passed with no limiting. `evalWithReload` detects `NOSCRIPT`, reloads the script and retries once.
 
-Configurable via `FAILURE_MODE` in `.env` or per-route in the middleware config.
+**3. Fail-open vs fail-closed**
+If Redis is unreachable:
+- `fail-open` (default): let the request through. Prioritizes uptime.
+- `fail-closed`: respond `503`. Better for abuse-sensitive endpoints like login or payments.
 
-**3. The boundary-burst problem**
-Fixed Window counts requests in a fixed 60-second block. A client can send
-the full quota in the last second of one window and again in the first second
-of the next — 2x the intended limit in ~2 real seconds. Sliding Window Counter
-fixes this by blending in a weighted portion of the previous window's count.
+Configurable via `FAILURE_MODE` or per route. During a short reconnect, ioredis queues commands (offline queue) with a bounded retry policy (about 3 seconds of backoff in total) before they fail and the failure mode applies.
 
-**4. Hot key problem (known limitation, not yet solved here)**
-If a single identifier (e.g. one very active user) generates huge traffic,
-its Redis key becomes a hotspot on one Redis node. Not an issue at small
-scale; at large scale this is typically solved with local + distributed
-two-tier limiting (approximate locally, sync to Redis periodically) rather
-than hitting Redis on every single request.
+**4. The boundary-burst problem**
+With a 30-second fixed window, a client can send the full quota at the end of one window and again at the start of the next: 2x the limit in a very short time. Sliding Window Counter blends in a weighted share of the previous window: `estimated = previous × (1 − elapsedFraction) + current`.
+
+**5. Why metrics are not in Redis**
+Metrics are for observability only, not for the rate-limit decision, so losing them on restart is acceptable. The trade-off: with several instances each one only sees its own counts (see Known limitations).
+
+**6. Hot key problem (not solved here)**
+A single very active identifier makes one Redis key a hotspot. At scale this is handled with two-tier limiting (approximate local limit, periodic sync to Redis).
 
 ## Architecture
 
@@ -160,78 +141,90 @@ than hitting Redis on every single request.
 Client request
       |
       v
-Express middleware (src/middleware.js)
+Express middleware (backend/src/middleware.js)
       |  picks algorithm via strategy pattern
+      |--------------------------> res.on("finish") -> Firehose log (fire-and-forget)
       v
-Algorithm module (src/algorithms/*.js)
-      |  runs atomic Lua script
+Algorithm module (backend/src/algorithms/*.js)
+      |  runs atomic Lua script (EVALSHA, NOSCRIPT recovery)
       v
-Redis (Upstash) -- shared state across all server instances
+Redis (Upstash): shared state across all server instances
 ```
 
-## Benchmark Results (k6 load test)
+## Benchmark results (k6 load test)
 
-Tested locally: 45s run, ramping from 5 to 30 concurrent virtual users, against
-a limit/capacity of 10 per algorithm. Full methodology in `k6-tests/loadtest.js`.
+Setup: 45 s run, ramping 5 → 30 virtual users, one client identity (all virtual users share one key), limit/capacity of 10 per algorithm. Script: `backend/k6-tests/loadtest.js`.
 
-| Algorithm | Throughput | Avg Latency | p95 Latency | Requests Allowed | Requests Rejected |
+> TODO before sharing: confirm the target these numbers were measured against and keep one of these lines.
+> - Measured locally against `http://localhost:3000` (Upstash Redis).
+> - Measured against the deployed Render API.
+
+| Algorithm | Throughput | Avg latency | p95 latency | Allowed | Rejected |
 |---|---|---|---|---|---|
-| Fixed Window | 97 req/s | 82ms | 130ms | 30 | 4,365 |
-| Sliding Window Counter | 92 req/s | 95ms | 161ms | 10 | 4,122 |
-| Token Bucket | 102 req/s | 74ms | 135ms | 24 | 4,576 |
-| Leaky Bucket | 98 req/s | 83ms | 149ms | 24 | 4,399 |
+| Fixed Window | 97 req/s | 82 ms | 130 ms | 30 | 4,365 |
+| Sliding Window Counter | 92 req/s | 95 ms | 161 ms | 10 | 4,122 |
+| Token Bucket | 102 req/s | 74 ms | 135 ms | 24 | 4,576 |
+| Leaky Bucket | 98 req/s | 83 ms | 149 ms | 24 | 4,399 |
 
-All four algorithms correctly rejected >99% of traffic once their limit was
-exceeded, while keeping p95 latency under 165ms — confirming the Lua-script
-atomic checks don't add meaningful overhead even under sustained concurrent load.
+**Reading the numbers**
+- **Fixed Window, 30 allowed:** the 45 s test spans about three 30 s windows, with up to 10 allowed in each.
+- **Sliding Window, 10 allowed:** rejected requests also increment the counter, so a client that keeps hammering carries a large `previous` count into the next window and stays blocked until it goes quiet. This is a deliberate trade-off, and it is stricter than the other algorithms.
+- **Token / Leaky Bucket, 24 allowed:** about 10 initial capacity plus 45 s × (1/3 per second) ≈ 25 possible; 24 were allowed.
+- **Latency:** every algorithm rejected more than 99% of traffic once over the limit, with p95 under 165 ms. Most of this latency is the network round trip to Redis. There is no "without Lua" baseline, so these numbers do not isolate Lua overhead.
 
-**Interesting finding during testing:** an early Token Bucket run showed a
-p95 latency spike to 981ms (one run, not reproducible on retest). Correlating
-with server logs pointed to a transient Redis reconnect mid-test — Upstash's
-free tier drops idle connections periodically, and any requests in flight
-during that reconnect window queue briefly rather than fail, thanks to
-`enableOfflineQueue` being on and the NOSCRIPT-recovery logic in
-`redisClient.js`. This is a good demonstration of why fail-open + automatic
-reconnect handling matters: the system slowed briefly under a transient
-failure but never went down or under/over-counted limits.
+**Latency spike during testing:** one early Token Bucket run showed a p95 of 981 ms that did not reproduce. Server logs suggested a Redis reconnect mid-test (Upstash's free tier drops idle connections). In-flight commands waited in ioredis's offline queue instead of failing, and the NOSCRIPT recovery covers a lost script cache after a reconnect. This was observed once and is not a proven root cause.
 
-To reproduce any of these results:
+Reproduce:
 ```bash
+cd backend
 npm start
-k6 run k6-tests/loadtest.js -e ALGO=fixed          # or sliding / token-bucket / leaky-bucket
+k6 run k6-tests/loadtest.js -e ALGO=fixed -e BASE_URL=http://localhost:3000
+# ALGO = fixed | sliding | token-bucket | leaky-bucket
 ```
 
-## Live Dashboard
+## Live dashboard
 
-**Try it live:** https://rate-limiter-eta.vercel.app/ (no setup needed)
+A React + Recharts dashboard shows allowed vs rejected requests per algorithm, polling `/api/metrics` every second. Try it at https://rate-limiter-eta.vercel.app/
 
-A React + Recharts dashboard shows allowed vs rejected requests per algorithm
-in real time, polling the backend's `/api/metrics` endpoint every second.
-
-To run it locally instead:
+Run locally:
 ```bash
-# terminal 1: backend (from project root)
-npm start
+# terminal 1
+cd backend && npm start
 
-# terminal 2: dashboard
+# terminal 2
 cd dashboard
 npm install
 npm run dev
 ```
 
-Open the URL Vite prints (usually `http://localhost:5173`). Generate some
-traffic to see it update live:
-```bash
-k6 run k6-tests/loadtest.js -e ALGO=fixed
-```
+## Request logging (AWS Kinesis Firehose)
+
+Every request outcome (IP, method, path, status code, algorithm, timestamp) is pushed to a Firehose delivery stream as newline-delimited JSON, ready for S3 and Athena. It is fire-and-forget: errors are caught and logged as warnings, and never affect the response.
+
+## Known limitations
+
+- **Metrics are per instance.** Rate limiting is distributed through Redis, but `/api/metrics` only reflects the instance that served the request.
+- **Time comes from the app server** (`Date.now()`), not Redis. Instances with skewed clocks can compute slightly different windows or refill amounts. Reading `TIME` inside the Lua script would fix this.
+- **`Retry-After` is approximate.** Bucket algorithms do not return an exact wait time yet, so the middleware falls back to a default.
+- **Firehose logging does one API call per request.** At high traffic it should be batched (`PutRecordBatch`) with a bounded buffer, and client IPs should be hashed.
+- **Behind a proxy (Render)** the real client IP needs `app.set("trust proxy", 1)`, otherwise clients may share one key.
+- **Hot keys** are not mitigated (see above).
+- **No concurrency proof test yet:** a test that fires N parallel requests at one key and asserts exactly `limit` are allowed.
 
 ## Roadmap
 
 - [x] Fixed Window Counter
 - [x] Sliding Window Counter
 - [x] Token Bucket
-- [x] Leaky Bucket
-- [ ] Sliding Window Log
-- [x] k6 load test suite with p50/p95/p99 benchmarks
-- [x] React + Recharts live dashboard (allowed vs blocked requests)
+- [x] Leaky Bucket (meter variant)
+- [x] k6 load test suite
+- [x] React + Recharts live dashboard
 - [x] Deploy to Vercel + Render
+- [x] Request logging to Kinesis Firehose
+- [ ] Concurrency test (exactly N allowed under parallel load)
+- [ ] Accurate `Retry-After` and `X-RateLimit-Reset` for all algorithms
+- [ ] Redis `TIME` inside Lua to remove clock-skew risk
+- [ ] Failure / fail-open counter on the dashboard
+- [ ] Batched Firehose logging
+- [ ] Sliding Window Log
+- [ ] True leaky bucket with a queue
